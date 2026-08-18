@@ -40,7 +40,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'report-issue', label: 'Report Issue', icon: AlertTriangle },
     { id: 'ai-detection', label: 'AI Detection', icon: Scan },
     { id: 'navigation', label: 'Accessible Route', icon: Navigation },
-    { id: 'score', label: 'Building Score', icon: BarChart3 },
     { id: 'admin', label: 'Admin Dashboard', icon: ShieldCheck },
   ];
 

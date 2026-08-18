@@ -386,22 +386,6 @@ export default function App() {
             defaultSubTab="fix-suggestions"
           />
         )}
-
-        {activeTab === 'score' && selectedBuilding && (
-          <BuildingScoreCard
-            building={selectedBuilding}
-            allBuildings={buildings}
-            onSelectBuilding={(b) => setSelectedBuilding(b)}
-            isAdminLoggedIn={isAdminLoggedIn}
-            onNavigateToRecommendations={() => {
-              if (isAdminLoggedIn) {
-                setActiveTab('recommendations');
-              } else {
-                setActiveTab('admin');
-              }
-            }}
-          />
-        )}
       </main>
 
       {/* Footer */}
