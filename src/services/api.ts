@@ -273,14 +273,27 @@ export const api = {
   async getAccessibilityFeaturesCount(): Promise<number> {
     if (!isSupabaseConfigured()) return 0;
     try {
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('accessibility_features')
-        .select('*', { count: 'exact', head: true });
+        .select('*');
       if (error) {
         console.error('[DEBUG] API - Accessibility features count error:', error);
         throw error;
       }
-      return count || 0;
+      if (!data) return 0;
+
+      // System columns to exclude from counting
+      const systemColumns = ['id', 'building_id', 'floor_id', 'feature_geometry', 'updated_at', 'created_at'];
+      
+      let totalPresentCount = 0;
+      data.forEach(row => {
+        Object.keys(row).forEach(key => {
+          if (!systemColumns.includes(key) && row[key] === 'present') {
+            totalPresentCount++;
+          }
+        });
+      });
+      return totalPresentCount;
     } catch (e) {
       console.warn('Error fetching accessibility features count:', e);
       return 0;
@@ -496,13 +509,7 @@ export const api = {
     const reporterName = reportData.reporterName?.trim() || 'Anonymous Campus Reporter';
     const bId = reportData.buildingId || 'bldg-iter-main';
     const bName = reportData.buildingName || 'SOA ITER Academic Block C';
-    let flId = 0;
-    if (typeof reportData.floorId === 'number' && !Number.isNaN(reportData.floorId)) {
-      flId = reportData.floorId;
-    } else if (typeof reportData.floorId === 'string') {
-      const match = (reportData.floorId as string).match(/\d+/);
-      flId = match ? parseInt(match[0], 10) : 0;
-    }
+    const flId = String(reportData.floorId);
     const flName = reportData.floorName || 'Ground Floor';
     const fName = (reportData.featureName || 'Reported Location').trim();
     const fType = reportData.featureType;

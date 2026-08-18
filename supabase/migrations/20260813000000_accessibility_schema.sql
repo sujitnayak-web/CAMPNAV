@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.reports (
     building_id TEXT NOT NULL DEFAULT 'bldg-iter-main',
     building_name TEXT NOT NULL DEFAULT 'SOA ITER Academic Block C',
     floor TEXT DEFAULT 'Ground Floor',
-    floor_id INT DEFAULT 0,
+    floor_id TEXT DEFAULT 'D-F0',
     floor_name TEXT DEFAULT 'Ground Floor',
     feature_id TEXT,
     feature_name TEXT NOT NULL DEFAULT 'Reported Location',
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS public.report_confirmations (
     solution TEXT,
     building_id TEXT DEFAULT 'bldg-iter-main',
     building_name TEXT DEFAULT 'SOA ITER Academic Block C',
-    floor_id INT DEFAULT 0,
+    floor_id TEXT DEFAULT 'D-F0',
     location_name TEXT DEFAULT 'Campus Facility',
     severity TEXT DEFAULT 'High',
     priority TEXT DEFAULT 'High',
@@ -85,7 +85,7 @@ ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS problem TEXT;
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS solution TEXT;
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS building_id TEXT DEFAULT 'bldg-iter-main';
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS building_name TEXT DEFAULT 'SOA ITER Academic Block C';
-ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS floor_id INT DEFAULT 0;
+ALTER TABLE public.report_confirmations ALTER COLUMN floor_id TYPE TEXT;
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS location_name TEXT DEFAULT 'Campus Facility';
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS severity TEXT DEFAULT 'High';
 ALTER TABLE public.report_confirmations ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'High';
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS public.recommendations (
     priority TEXT DEFAULT 'Medium',
     impact_score INT DEFAULT 50,
     status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'In Progress', 'Completed')),
-    floor_id INT DEFAULT 0,
+    floor_id TEXT DEFAULT 'D-F0',
     location_name TEXT DEFAULT 'Campus Facility',
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
@@ -133,12 +133,42 @@ CREATE TABLE IF NOT EXISTS public.recommendations (
 -- Ensure table is clean of any mock/demo records
 DELETE FROM public.recommendations;
 
--- 6. ROW LEVEL SECURITY (RLS) POLICIES
-ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.report_confirmations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.recommendations ENABLE ROW LEVEL SECURITY;
+-- 7. TRIGGER TO SYNCHRONIZE REPORT STATUS WITH ACCESSIBILITY_FEATURES
+CREATE OR REPLACE FUNCTION public.sync_report_to_feature()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_col_name TEXT;
+  v_new_status TEXT;
+BEGIN
+  -- Determine new status
+  IF (NEW.status = 'verified' AND (OLD.status IS NULL OR OLD.status != 'verified')) THEN
+    v_new_status := CASE
+      WHEN NEW.issue_type = 'broken' THEN 'temporary'
+      WHEN NEW.issue_type = 'working' THEN 'present'
+      WHEN NEW.issue_type = 'not_available' THEN 'none'
+      ELSE NULL
+    END;
+  ELSIF (NEW.status = 'resolved' AND (OLD.status IS NULL OR OLD.status != 'resolved')) THEN
+    v_new_status := 'present';
+  END IF;
+
+  -- Only proceed if status is valid
+  IF v_new_status IS NOT NULL THEN
+    -- Target column is simply the feature_type
+    v_col_name := NEW.feature_type;
+
+    -- Dynamic update using identifier quoting and explicit type cast
+    EXECUTE format('UPDATE public.accessibility_features SET %I = %L::public.accessibility_status WHERE floor_id = %L', v_col_name, v_new_status, NEW.floor_id);
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_sync_report_to_feature
+AFTER UPDATE ON public.reports
+FOR EACH ROW
+EXECUTE FUNCTION public.sync_report_to_feature();
 
 -- Recommendations Policies
 DROP POLICY IF EXISTS "Allow public read recommendations" ON public.recommendations;
