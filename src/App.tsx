@@ -125,6 +125,7 @@ export default function App() {
   // Load initial data
   useEffect(() => {
     async function loadInitialData() {
+      // 1. Fetch buildings essential for the dashboard
       const sBuildings = await api.getSupabaseBuildings();
       const bList = await api.getBuildings();
       
@@ -132,24 +133,24 @@ export default function App() {
       
       if (allBuildings.length > 0) {
         setBuildings(allBuildings);
+        setHomeBuildings(sBuildings || []);
+        
+        // Select first building if none selected
+        if (!selectedBuilding) {
+          setSelectedBuilding(allBuildings[0]);
+        }
       }
       
-      setHomeBuildings(sBuildings || []);
-      
-      const rList = await api.getReports();
-      if (rList) setReports(rList);
-
-      const recList = await api.getRecommendations();
-      if (recList) setRecommendations(recList);
-
-      const count = await api.getAccessibilityFeaturesCount();
-      setAccessibilityFeaturesCount(count);
-
-      const adminCount = await api.getAdminReportsCount();
-      setAdminReportsCount(adminCount);
-
-      const totalReportsCount = await api.getReportsCount();
-      setVerifiedReportsCount(Math.max(0, totalReportsCount - adminCount));
+      // 2. Fetch other data asynchronously (not blocking the initial building load)
+      Promise.all([
+        api.getReports().then(r => r && setReports(r)),
+        api.getRecommendations().then(r => r && setRecommendations(r)),
+        api.getAccessibilityFeaturesCount().then(setAccessibilityFeaturesCount),
+        api.getAdminReportsCount().then(count => {
+          setAdminReportsCount(count);
+          api.getReportsCount().then(total => setVerifiedReportsCount(Math.max(0, total - count)));
+        })
+      ]).catch(err => console.error('Error loading non-essential data:', err));
     }
     loadInitialData();
   }, []);

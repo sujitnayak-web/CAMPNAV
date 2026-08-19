@@ -26,6 +26,7 @@ interface NavbarProps {
   onLogoutAdmin?: () => void;
   onSelectBuilding: (buildingId: string) => void;
   selectedBuildingId: string | null;
+  buildings: Building[];
   session: Session | null;
   onOpenAuth: () => void;
   profile: any;
@@ -39,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogoutAdmin,
   onSelectBuilding,
   selectedBuildingId,
+  buildings,
   session,
   onOpenAuth,
   profile
@@ -118,6 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <BuildingSelector 
               selectedBuildingId={selectedBuildingId}
               onSelect={onSelectBuilding}
+              buildings={buildings}
             />
             
             {session ? (
