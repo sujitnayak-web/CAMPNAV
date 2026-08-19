@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Session } from '@supabase/supabase-js';
 import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, RouteResult } from './types';
 import { api } from './services/api';
 import { supabase, isSupabaseConfigured, signOutAdminFromSupabase, checkIsAdminUser } from './lib/supabase';
@@ -11,10 +12,54 @@ import { AiDetection } from './components/AiDetection';
 import { AccessibleNavigation } from './components/AccessibleNavigation';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BuildingScoreCard } from './components/BuildingScoreCard';
+import { TwinGramPage } from './components/TwinGramPage';
 import { HowItWorksModal } from './components/HowItWorksModal';
+import { AuthModal } from './components/AuthModal';
+import { ProfilePage } from './components/ProfilePage';
+import { getDefaultAvatarUrl } from './lib/avatar';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  const fetchProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (data) {
+      if (!data.avatar_url) {
+        const defaultUrl = getDefaultAvatarUrl();
+        await supabase
+          .from('user_profiles')
+          .update({ avatar_url: defaultUrl })
+          .eq('id', userId);
+        setProfile({ ...data, avatar_url: defaultUrl });
+      } else {
+        setProfile(data);
+      }
+    }
+  };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user?.id) fetchProfile(session.user.id);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user?.id) fetchProfile(session.user.id);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [homeBuildings, setHomeBuildings] = useState<Building[]>([]);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -299,10 +344,22 @@ export default function App() {
         onLogoutAdmin={handleLogoutAdmin}
         onSelectBuilding={handleSelectBuilding}
         selectedBuildingId={selectedBuilding?.id || null}
+        buildings={buildings}
+        session={session}
+        profile={profile}
+        onOpenAuth={() => setShowAuthModal(true)}
       />
 
       {/* Main Content Viewport Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'profile' && session && (
+          <ProfilePage user={session.user} profile={profile} refreshProfile={() => fetchProfile(session.user.id)} />
+        )}
+
+        {activeTab === 'twingram' && (
+          <TwinGramPage session={session} onOpenAuth={() => setShowAuthModal(true)} />
+        )}
+
         {activeTab === 'dashboard' && (
           <HomeDashboard
             buildings={buildings}
@@ -396,6 +453,8 @@ export default function App() {
         isOpen={isHowItWorksOpen}
         onClose={() => setIsHowItWorksOpen(false)}
       />
+      {/* Auth Modal */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 }

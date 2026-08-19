@@ -1,4 +1,5 @@
 import React from 'react';
+import { Session } from '@supabase/supabase-js';
 import { 
   Building2, 
   Map, 
@@ -7,12 +8,15 @@ import {
   Navigation, 
   ShieldCheck,
   Lock,
-  BarChart3, 
+  BarChart3,
   HelpCircle,
-  Zap
+  Zap,
+  Camera,
+  User
 } from 'lucide-react';
 import { Building } from '../types';
 import { BuildingSelector } from './BuildingSelector';
+import { UserMenu } from './UserMenu';
 
 interface NavbarProps {
   activeTab: string;
@@ -22,6 +26,9 @@ interface NavbarProps {
   onLogoutAdmin?: () => void;
   onSelectBuilding: (buildingId: string) => void;
   selectedBuildingId: string | null;
+  session: Session | null;
+  onOpenAuth: () => void;
+  profile: any;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -31,7 +38,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdminLoggedIn = false,
   onLogoutAdmin,
   onSelectBuilding,
-  selectedBuildingId
+  selectedBuildingId,
+  session,
+  onOpenAuth,
+  profile
 }) => {
   // Navigation tabs visible in the main navbar
   const navItems = [
@@ -45,6 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header id="main-navbar" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+      {/* ... top banner ... */}
       {/* Top Banner */}
       <div className="bg-indigo-900 text-white px-4 py-1.5 text-xs flex flex-wrap justify-between items-center">
         <div className="flex items-center space-x-2">
@@ -94,12 +105,34 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Building Selector & Admin Login / Logout Action Button */}
+          {/* Controls: TwinGram → Building Dropdown → Sign In → Admin Login */}
           <div className="flex items-center space-x-3">
+            <button
+              id="btn-nav-twingram"
+              onClick={() => setActiveTab('twingram')}
+              className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-200 transition-all cursor-pointer shadow-2xs"
+            >
+              <Camera className="w-3.5 h-3.5 text-slate-500" />
+              <span>TwinGram</span>
+            </button>
             <BuildingSelector 
               selectedBuildingId={selectedBuildingId}
               onSelect={onSelectBuilding}
             />
+            
+            {session ? (
+              <UserMenu user={session.user} profile={profile} setActiveTab={setActiveTab} />
+            ) : (
+              <button
+                id="btn-nav-user-signin"
+                onClick={onOpenAuth}
+                className="flex items-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-200 transition-all cursor-pointer shadow-2xs"
+              >
+                <User className="w-3.5 h-3.5 text-blue-500" />
+                <span>Sign In</span>
+              </button>
+            )}
+            
             {isAdminLoggedIn ? (
               <button
                 id="btn-nav-admin-logout"
