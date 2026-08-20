@@ -280,7 +280,12 @@ export const api = {
         console.error('[DEBUG] API - Accessibility features count error:', error);
         throw error;
       }
-      if (!data) return 0;
+      
+      // Defensive check: if no data, return 0 instead of processing
+      if (!data || !Array.isArray(data)) {
+        console.warn('[DEBUG] API - Accessibility features data missing or invalid');
+        return 0;
+      }
 
       // System columns to exclude from counting
       const systemColumns = ['id', 'building_id', 'floor_id', 'feature_geometry', 'updated_at', 'created_at'];
@@ -788,6 +793,84 @@ export const api = {
     } catch (e: any) {
       console.warn('[Supabase Warning] getReports failed, falling back to cached reports:', e?.message || e);
       return [];
+    }
+  },
+
+  async getTwinGramPosts(): Promise<any[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data: posts, error } = await supabase
+        .from('twingram_posts')
+        .select('id, content, created_at, user_id, image_url, location, verification_status')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (!posts) return [];
+
+      // Fetch all unique user profiles
+      const userIds = [...new Set(posts.map(p => p.user_id))];
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, username, avatar_url')
+        .in('id', userIds);
+
+      const profileMap = (profiles || []).reduce((acc, profile) => {
+        acc[profile.id] = profile;
+        return acc;
+      }, {} as Record<string, any>);
+
+      return posts.map(post => ({
+        ...post,
+        user_profiles: profileMap[post.user_id] || { full_name: 'Unknown', username: 'unknown', avatar_url: '' }
+      }));
+    } catch (e) {
+      console.error('Error fetching TwinGram posts:', e);
+      return [];
+    }
+  },
+
+  async updateTwinGramPostStatus(postId: string, status: 'verified' | 'fake'): Promise<{ success: boolean; data?: any; error?: string }> {
+    if (!isSupabaseConfigured()) return { success: false, error: 'Supabase not configured' };
+    try {
+      // 1. Perform the update and request the updated row back immediately
+      const { data: updatedPosts, error: updateError } = await supabase
+        .from('twingram_posts')
+        .update({ verification_status: status })
+        .eq('id', postId)
+        .select('id, content, created_at, user_id, image_url, location, verification_status');
+      
+      if (updateError) {
+        console.error('Error updating TwinGram post status:', updateError);
+        return { success: false, error: updateError.message };
+      }
+
+      if (!updatedPosts || updatedPosts.length === 0) {
+        return { success: false, error: 'Update failed: Row not found or permission denied (RLS).' };
+      }
+      
+      const updatedPost = updatedPosts[0];
+
+      // Verify the returned status matches the requested status
+      if (updatedPost.verification_status !== status) {
+        return { success: false, error: `Update failed: Expected status ${status} but got ${updatedPost.verification_status}` };
+      }
+      
+      // 2. Fetch user profile
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, username, avatar_url')
+        .eq('id', updatedPost.user_id)
+        .single();
+        
+      const finalPost = {
+        ...updatedPost,
+        user_profiles: profile || { full_name: 'Unknown', username: 'unknown', avatar_url: '' }
+      };
+
+      return { success: true, data: finalPost };
+    } catch (e: any) {
+      console.error('Error updating TwinGram post status:', e);
+      return { success: false, error: e.message };
     }
   },
 

@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
-import { Heart, ThumbsDown, MessageCircle, Share2, PlusCircle, AlertCircle } from 'lucide-react';
+import { Heart, ThumbsDown, MessageCircle, Share2, PlusCircle, AlertCircle, Trophy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { CreatePostModal } from './CreatePostModal';
 import { CommentModal } from './CommentModal';
+import { TwinGramPostCard } from './TwinGramPostCard';
+import { ShareModal } from './ShareModal';
+import { api } from '../services/api';
+import { LeaderboardPage } from './LeaderboardPage';
 
 interface TwinGramPost {
   id: string;
   content: string;
   created_at: string;
+  user_id: string;
   image_url?: string | null;
   location?: string | null;
   user_profiles: {
@@ -20,22 +25,27 @@ interface TwinGramPost {
   dislikes: number;
   commentsCount: number;
   userReaction: 'like' | 'dislike' | null;
+  verification_status: 'pending' | 'verified' | 'fake';
 }
 
 interface TwinGramPageProps {
   session: Session | null;
   onOpenAuth: () => void;
+  isAdmin?: boolean;
 }
 
-export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth }) => {
+export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth, isAdmin }) => {
   const [posts, setPosts] = useState<TwinGramPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [selectedPostForComments, setSelectedPostForComments] = useState<TwinGramPost | null>(null);
+  const [selectedPostForSharing, setSelectedPostForSharing] = useState<TwinGramPost | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [processingReaction, setProcessingReaction] = useState<string | null>(null);
+  const [processingVerification, setProcessingVerification] = useState<string | null>(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   useEffect(() => {
     if (successMessage) {
@@ -48,7 +58,7 @@ export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth 
     // 1. Fetch posts only
     const { data: postsData, error: postsError } = await supabase
       .from('twingram_posts')
-      .select('id, content, created_at, user_id, image_url, location')
+      .select('id, content, created_at, user_id, image_url, location, verification_status')
       .order('created_at', { ascending: false });
 
     if (postsError) {
@@ -167,6 +177,26 @@ export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth 
     }
   };
 
+  const handleUpdatePostStatus = async (postId: string, status: 'verified' | 'fake') => {
+    setProcessingVerification(postId);
+    try {
+      const result = await api.updateTwinGramPostStatus(postId, status);
+      if (result.success && result.data) {
+        setPosts(prev => prev.map(p => p.id === postId ? { ...p, ...result.data } : p));
+      } else if (!result.success) {
+        alert('Error updating post status: ' + (result.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error updating post status');
+    } finally {
+      setProcessingVerification(null);
+    }
+  };
+
+  if (showLeaderboard) {
+    return <LeaderboardPage onBack={() => setShowLeaderboard(false)} />;
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
       {successMessage && (
@@ -180,14 +210,21 @@ export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth 
         <p className="text-slate-600 font-medium">Share, discover, and improve accessibility across campus.</p>
       </div>
 
-      {/* Create Post Button */}
-      <div className="flex justify-center">
+      {/* Buttons */}
+      <div className="flex justify-center gap-3">
         <button
           onClick={handleCreatePost}
           className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 cursor-pointer"
         >
           <PlusCircle className="w-4 h-4" />
           <span>Create Post</span>
+        </button>
+        <button
+          onClick={() => setShowLeaderboard(true)}
+          className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold text-sm px-6 py-3 rounded-xl transition-all cursor-pointer"
+        >
+          <Trophy className="w-4 h-4" />
+          <span>Leaderboard</span>
         </button>
       </div>
 
@@ -199,56 +236,17 @@ export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth 
       ) : (
         <div className="space-y-6">
           {posts.map(post => (
-            <div key={post.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
-              <div className="flex items-center space-x-3">
-                <img src={post.user_profiles.avatar_url || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Default'} alt={post.user_profiles.username} className="w-10 h-10 rounded-full" />
-                <div>
-                  <p className="font-bold text-slate-900 text-sm">{post.user_profiles.full_name}</p>
-                  <p className="text-xs text-slate-500">
-                    @{post.user_profiles.username} • {new Date(post.created_at).toLocaleDateString()}
-                    {post.location && ` • ${post.location}`}
-                  </p>
-                </div>
-              </div>
-              <p className="text-slate-800 text-sm leading-relaxed">{post.content}</p>
-              
-              {post.image_url && (
-                <img src={post.image_url} alt="Post image" className="w-full rounded-xl object-cover" />
-              )}
-              
-              <div className="flex items-center space-x-6 pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => handleReaction(post.id, 'like')}
-                  disabled={processingReaction === post.id}
-                  className={`flex items-center space-x-1.5 transition-colors ${
-                    post.userReaction === 'like' ? 'text-rose-600' : 'text-slate-500 hover:text-rose-500'
-                  }`}
-                >
-                  <Heart className={`w-5 h-5 ${post.userReaction === 'like' ? 'fill-current' : ''}`} />
-                  <span className="text-xs font-bold">{post.likes}</span>
-                </button>
-                <button
-                  onClick={() => handleReaction(post.id, 'dislike')}
-                  disabled={processingReaction === post.id}
-                  className={`flex items-center space-x-1.5 transition-colors ${
-                    post.userReaction === 'dislike' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <ThumbsDown className={`w-5 h-5 ${post.userReaction === 'dislike' ? 'fill-current' : ''}`} />
-                  <span className="text-xs font-bold">{post.dislikes}</span>
-                </button>
-                <button 
-                  onClick={() => setSelectedPostForComments(post)}
-                  className="flex items-center space-x-1.5 text-slate-500 hover:text-blue-500 transition-colors"
-                >
-                  <MessageCircle className="w-5 h-5" />
-                  <span className="text-xs font-bold">{post.commentsCount}</span>
-                </button>
-                <button className="flex items-center space-x-1.5 text-slate-500 hover:text-slate-900 transition-colors">
-                  <Share2 className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
+            <TwinGramPostCard 
+              key={post.id} 
+              post={post} 
+              onReaction={handleReaction}
+              processingReaction={processingReaction}
+              onCommentClick={setSelectedPostForComments}
+              onShareClick={setSelectedPostForSharing}
+              isAdmin={isAdmin}
+              onUpdatePostStatus={handleUpdatePostStatus}
+              processingVerification={processingVerification}
+            />
           ))}
         </div>
       )}
@@ -264,6 +262,14 @@ export const TwinGramPage: React.FC<TwinGramPageProps> = ({ session, onOpenAuth 
           onClose={() => setSelectedPostForComments(null)}
           onOpenAuth={onOpenAuth}
           onCommentChanged={fetchPosts}
+        />
+      )}
+      
+      {selectedPostForSharing && (
+        <ShareModal 
+          isOpen={!!selectedPostForSharing}
+          onClose={() => setSelectedPostForSharing(null)}
+          postUrl={`${window.location.origin}/twingram/post/${selectedPostForSharing.id}`}
         />
       )}
       

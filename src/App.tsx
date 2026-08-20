@@ -13,6 +13,7 @@ import { AccessibleNavigation } from './components/AccessibleNavigation';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BuildingScoreCard } from './components/BuildingScoreCard';
 import { TwinGramPage } from './components/TwinGramPage';
+import { TwinGramPostDetail } from './components/TwinGramPostDetail';
 import { HowItWorksModal } from './components/HowItWorksModal';
 import { AuthModal } from './components/AuthModal';
 import { ProfilePage } from './components/ProfilePage';
@@ -20,9 +21,21 @@ import { getDefaultAvatarUrl } from './lib/avatar';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [sharedPostId, setSharedPostId] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/twingram/post/')) {
+      const postId = path.split('/')[3];
+      if (postId) {
+        setSharedPostId(postId);
+        setActiveTab('twingram');
+      }
+    }
+  }, []);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -70,6 +83,7 @@ export default function App() {
   const [accessibilityFeaturesCount, setAccessibilityFeaturesCount] = useState<number>(0);
   const [adminReportsCount, setAdminReportsCount] = useState<number>(0);
   const [verifiedReportsCount, setVerifiedReportsCount] = useState<number>(0);
+  const [twingramPosts, setTwingramPosts] = useState<any[]>([]);
 
   const [prefilledLocation, setPrefilledLocation] = useState<{ buildingId: string; floorId: number; x: number; y: number } | null>(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState<boolean>(false);
@@ -112,14 +126,26 @@ export default function App() {
     }
   }, []);
 
-  const handleLoginAdmin = () => {
+  const handleLoginAdmin = async () => {
+    // If a normal user is logged in, sign them out first
+    if (session) {
+      await supabase.auth.signOut();
+      // App.tsx state will update automatically via onAuthStateChange listener
+      setSession(null);
+      setProfile(null);
+    }
     setIsAdminLoggedIn(true);
   };
 
   const handleLogoutAdmin = async () => {
     await signOutAdminFromSupabase();
     setIsAdminLoggedIn(false);
-    setActiveTab('admin');
+    
+    // Explicitly clear any stale session/profile data
+    setSession(null);
+    setProfile(null);
+    
+    setActiveTab('dashboard');
   };
 
   // Load initial data
@@ -149,7 +175,8 @@ export default function App() {
         api.getAdminReportsCount().then(count => {
           setAdminReportsCount(count);
           api.getReportsCount().then(total => setVerifiedReportsCount(Math.max(0, total - count)));
-        })
+        }),
+        api.getTwinGramPosts().then(posts => setTwingramPosts(posts))
       ]).catch(err => console.error('Error loading non-essential data:', err));
     }
     loadInitialData();
@@ -247,6 +274,10 @@ export default function App() {
         console.warn('Error refreshing recommendations after report verification:', err);
       }
     }
+  };
+
+  const handleUpdatePostStatus = (postId: string, status: 'verified' | 'fake') => {
+    setTwingramPosts(prev => prev.map(p => p.id === postId ? { ...p, verification_status: status } : p));
   };
 
   const handleReportResolved = (reportId: string) => {
@@ -354,11 +385,15 @@ export default function App() {
       {/* Main Content Viewport Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'profile' && session && (
-          <ProfilePage user={session.user} profile={profile} refreshProfile={() => fetchProfile(session.user.id)} />
+          <ProfilePage user={session.user} profile={profile} refreshProfile={() => fetchProfile(session.user.id)} isAdmin={isAdminLoggedIn} />
         )}
 
         {activeTab === 'twingram' && (
-          <TwinGramPage session={session} onOpenAuth={() => setShowAuthModal(true)} />
+          sharedPostId ? (
+            <TwinGramPostDetail postId={sharedPostId} session={session} onOpenAuth={() => setShowAuthModal(true)} isAdmin={isAdminLoggedIn} />
+          ) : (
+            <TwinGramPage session={session} onOpenAuth={() => setShowAuthModal(true)} isAdmin={isAdminLoggedIn} />
+          )
         )}
 
         {activeTab === 'dashboard' && (
@@ -418,9 +453,11 @@ export default function App() {
             reports={reports}
             buildings={buildings}
             recommendations={recommendations}
+            twingramPosts={twingramPosts}
             onReportVerified={handleReportVerified}
             onReportResolved={handleReportResolved}
             onRecommendationStatusUpdated={handleRecommendationStatusUpdated}
+            onUpdatePostStatus={handleUpdatePostStatus}
             isAdminLoggedIn={isAdminLoggedIn}
             onLoginAdmin={handleLoginAdmin}
             onLogoutAdmin={handleLogoutAdmin}
@@ -434,9 +471,11 @@ export default function App() {
             reports={reports}
             buildings={buildings}
             recommendations={recommendations}
+            twingramPosts={twingramPosts}
             onReportVerified={handleReportVerified}
             onReportResolved={handleReportResolved}
             onRecommendationStatusUpdated={handleRecommendationStatusUpdated}
+            onUpdatePostStatus={handleUpdatePostStatus}
             isAdminLoggedIn={isAdminLoggedIn}
             onLoginAdmin={handleLoginAdmin}
             onLogoutAdmin={handleLogoutAdmin}
